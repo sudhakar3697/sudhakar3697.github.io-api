@@ -1,0 +1,19 @@
+{
+  "name": "our-clipboard-api",
+  "version": "1.0.0",
+  "description": "Our Clipboard - Firebase firestore API",
+  "engines": {
+    "node": "14.x"
+  },
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1",
+    "firebase": "^7.15.4",
+    "helmet": "^3.23.2"
+  }
+}
