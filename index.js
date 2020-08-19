@@ -2,6 +2,7 @@ const express = require('express')
 const cors = require('cors');
 const helmet = require('helmet');
 const firebase = require('firebase');
+const jwt = require('jsonwebtoken');
 require('firebase/firestore');
 require('dotenv').config();
 
@@ -42,6 +43,30 @@ async function update(value) {
   }
 }
 
+const docRefToDo = db.collection('todos').doc('TD');
+
+async function getToDoItems() {
+  try {
+    const doc = await docRefToDo.get();
+    return doc.data().content;
+  } catch (err) {
+    console.log(err);
+    throw err;
+  }
+}
+
+async function updateToDoItems(value) {
+  try {
+    await docRefToDo.set({
+      content: value || ''
+    });
+    return true;
+  } catch (err) {
+    console.log(err);
+    throw err;
+  }
+}
+
 const PORT = process.env.PORT || 5000
 
 const app = express();
@@ -62,6 +87,44 @@ app.get('/api/oc-data', async (req, res) => {
 
 app.put('/api/oc-data', async (req, res) => {
   res.send(await update(req.body.data));
+});
+
+
+const authRequired = async (req, res, next) => {
+  try {
+    const token = req.headers.authorization.split(' ')[1];
+    const decoded = jwt.verify(token, process.env.SECRET_KEY);
+    if (decoded.id === process.env.SECRET_KEY_U) {
+      req.user = decoded;
+      return next();
+    } else {
+      return res.sendStatus(403);
+    }
+  } catch (err) {
+    return res.sendStatus(401);
+  }
+};
+
+app.post('/api/sign-in', async (req, res) => {
+  try {
+    const { id, password } = req.body;
+    if (id === process.env.SECRET_KEY_U && password === process.env.SECRET_KEY_P) {
+      const token = jwt.sign({ id }, process.env.SECRET_KEY);
+      res.send(token);
+    } else {
+      res.status(403).send('Incorrect Username/Password');
+    }
+  } catch (err) {
+    res.status(400).send(err.message);
+  }
+});
+
+app.get('/api/td-data', authRequired, async (req, res) => {
+  res.send(await getToDoItems());
+});
+
+app.put('/api/td-data', authRequired, async (req, res) => {
+  res.send(await updateToDoItems(req.body.data));
 });
 
 app.listen(PORT, () => {
