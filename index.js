@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const firebase = require('firebase');
 const jwt = require('jsonwebtoken');
+const { OAuth2Client } = require('google-auth-library');
 require('firebase/firestore');
 require('dotenv').config();
 
@@ -73,6 +74,7 @@ const app = express();
 
 const corsOptions = {
   origin: 'https://sudhakar3697.github.io',
+  // origin: '*',
   optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
 
@@ -93,12 +95,30 @@ app.put('/api/oc-data', async (req, res) => {
 const authRequired = async (req, res, next) => {
   try {
     const token = req.headers.authorization.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.SECRET_KEY);
-    if (decoded.id === process.env.SECRET_KEY_U) {
-      req.user = decoded;
-      return next();
-    } else {
-      return res.sendStatus(403);
+    if (req.query.type === 'google') {
+      const client = new OAuth2Client('244780050095-egn5r6dpgv3ie7c02fn0q60q08mpr8rd.apps.googleusercontent.com');
+      const ticket = await client.verifyIdToken({
+        idToken: token,
+        audience: '244780050095-egn5r6dpgv3ie7c02fn0q60q08mpr8rd.apps.googleusercontent.com'
+      });
+      const payload = ticket.getPayload();
+      const userid = payload['sub'];
+      if (userid === process.env.SECRET_GA) {
+        req.user = payload;
+        return next();
+      }
+      else {
+        return res.sendStatus(403);
+      }
+    }
+    else {
+      const decoded = jwt.verify(token, process.env.SECRET_KEY);
+      if (decoded.id === process.env.SECRET_KEY_U) {
+        req.user = decoded;
+        return next();
+      } else {
+        return res.sendStatus(403);
+      }
     }
   } catch (err) {
     return res.sendStatus(401);
