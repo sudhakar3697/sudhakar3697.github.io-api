@@ -2,9 +2,6 @@
   "name": "our-clipboard-api",
   "version": "1.0.0",
   "description": "Our Clipboard - Firebase firestore API",
-  "engines": {
-    "node": "14.x"
-  },
   "main": "index.js",
   "scripts": {
     "start": "node index.js"

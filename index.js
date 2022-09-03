@@ -70,11 +70,13 @@ async function updateToDoItems(value) {
 
 const PORT = process.env.PORT || 5000
 
+const gClientId = '244780050095-9ccg4opqdf7eimdi36h1toi232la4ecv.apps.googleusercontent.com';
+
 const app = express();
 
 const corsOptions = {
-  origin: 'https://sudhakar3697.github.io',
-  // origin: '*',
+  // origin: 'https://sudhakar3697.github.io',
+  origin: '*',
   optionsSuccessStatus: 200 // some legacy browsers (IE11, various SmartTVs) choke on 204
 };
 
@@ -96,10 +98,10 @@ const authRequired = async (req, res, next) => {
   try {
     const token = req.headers.authorization.split(' ')[1];
     if (req.query.type === 'google') {
-      const client = new OAuth2Client('244780050095-egn5r6dpgv3ie7c02fn0q60q08mpr8rd.apps.googleusercontent.com');
+      const client = new OAuth2Client(gClientId);
       const ticket = await client.verifyIdToken({
         idToken: token,
-        audience: '244780050095-egn5r6dpgv3ie7c02fn0q60q08mpr8rd.apps.googleusercontent.com'
+        audience: gClientId
       });
       const payload = ticket.getPayload();
       const userid = payload['sub'];
