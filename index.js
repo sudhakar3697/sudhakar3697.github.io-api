@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const ocHandler = require('./handlers/clips');
 const todoHandler = require('./handlers/todo');
 const obHandler = require('./handlers/ourbox');

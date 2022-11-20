@@ -2,26 +2,14 @@ const express = require('express');
 const router = express.Router();
 // const EventEmitter = require('events');
 const multer = require('multer');
-const firebase = require('firebase/app');
+const firebase = require('./firebase');
 global.XMLHttpRequest = require('xhr2');
 require('firebase/auth');
 require('firebase/storage');
-require('dotenv').config();
 
 const upload = multer();
 const uploadTasks = new Map();
 // const uploadEventsStream = new EventEmitter();
-
-const firebaseConfig = {
-    apiKey: process.env.API_KEY,
-    authDomain: process.env.AUTH_DOMAIN,
-    databaseURL: process.env.DATABASE_URL,
-    projectId: process.env.PROJECT_ID,
-    storageBucket: process.env.STORAGE_BUCKET,
-    messagingSenderId: process.env.MESSAGING_SENDER_ID,
-    appId: process.env.APP_ID
-};
-firebase.initializeApp(firebaseConfig);
 
 const storage = firebase.storage();
 const storageRef = storage.ref();
