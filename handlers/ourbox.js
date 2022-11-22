@@ -1,15 +1,33 @@
 const express = require('express');
 const router = express.Router();
-// const EventEmitter = require('events');
+const EventEmitter = require('events');
 const multer = require('multer');
 const firebase = require('./firebase');
+const FirebaseStorage = require('multer-firebase-storage')
 global.XMLHttpRequest = require('xhr2');
-require('firebase/auth');
 require('firebase/storage');
+require('dotenv').config();
+
+// const upload = multer({
+//     storage: FirebaseStorage({
+//         bucketName: process.env.STORAGE_BUCKET,
+//         credentials: {
+//             clientEmail: process.env.CLIENT_EMAIL,
+//             privateKey: process.env.PRIVATE_KEY.replace(/\\n/g, '\n'),
+//             projectId: process.env.PROJECT_ID
+//         },
+//         hooks: {
+//             afterUpload(req, file, fref, bref) {
+//                 // console.log(`after upload:`, req, file, fref, bref)
+//             },
+//         }
+//     })
+// });
 
 const upload = multer();
+
 const uploadTasks = new Map();
-// const uploadEventsStream = new EventEmitter();
+const uploadEventsStream = new EventEmitter();
 
 const storage = firebase.storage();
 const storageRef = storage.ref();
@@ -19,44 +37,6 @@ router.get('/', async (req, res) => {
     try {
         res.send(await listFilesInRoot());
     } catch (err) {
-        res.status(404).send(err);
-    }
-});
-
-// Upload files to root
-router.post('/', upload.fields([{ name: 'files-to-upload', maxCount: 4 }]), async (req, res) => {
-    try {
-        const errors = [];
-        const tasks = [];
-        for (const file of req.files['files-to-upload']) {
-            try {
-                const fileSize = file.size / (1024 * 1024);
-                if (fileSize > 250) {
-                    errors.push({ name: file.originalname, error: 'File should be less than 250 MB' });
-                }
-                else {
-                    tasks.push({ name: file.originalname, status: 'started' });
-                    if (!uploadTasks.has(file.originalname)) {
-                        console.log('Task has been added to uploadTasks Map');
-                        uploadTasks.set(file.originalname, null);
-                        printUploadTasksMap('uploadItem-init-1');
-                    }
-                    else {
-                        console.log('Already present in uploadTasks Map');
-                        printUploadTasksMap('uploadItem-init-2');
-                    }
-                    uploadItem(file.originalname, file.buffer);
-                }
-            } catch (err) {
-                errors.push({ name: file.originalname, error: err });
-            }
-        }
-        res.send({
-            tasks,
-            errors
-        });
-    } catch (err) {
-        console.log(err);
         res.status(404).send(err);
     }
 });
@@ -79,6 +59,46 @@ router.delete('/', async (req, res) => {
     }
 });
 
+// router.post('/', upload.fields([{ name: 'files-to-upload', maxCount: 4 }]), (req, res) => {
+//     res.status(201).json(req.files['files-to-upload'])
+// });
+
+// Upload files to root
+router.post('/', upload.fields([{ name: 'files-to-upload', maxCount: 4 }]), async (req, res) => {
+    try {
+        const errors = [];
+        const tasks = [];
+        for (const file of req.files['files-to-upload']) {
+            try {
+                const fileSize = file.size / (1024 * 1024);
+                if (fileSize > 250) {
+                    errors.push({ name: file.originalname, error: 'File should be less than 250 MB' });
+                }
+                else {
+                    tasks.push({ name: file.originalname, status: 'started' });
+                    if (!uploadTasks.has(file.originalname)) {
+                        console.log('Task has been added to uploadTasks Map');
+                        uploadTasks.set(file.originalname, null);
+                    }
+                    else {
+                        console.log('Already present in uploadTasks Map');
+                    }
+                    uploadItem(file.originalname, file.buffer);
+                }
+            } catch (err) {
+                errors.push({ name: file.originalname, error: err });
+            }
+        }
+        res.send({
+            tasks,
+            errors
+        });
+    } catch (err) {
+        console.log(err);
+        res.status(404).send(err);
+    }
+});
+
 // Perform pause, resume, cancel operations on upload tasks
 router.post('/uploads', async (req, res) => {
     try {
@@ -90,11 +110,11 @@ router.post('/uploads', async (req, res) => {
                 break;
             case 'pause-or-resume':
                 const snapshot = uploadTasks.get(req.body.file).snapshot;
-                if (snapshot.state === firebase.storage.TaskState.PAUSED) {
+                if (snapshot.state === 'paused') {
                     uploadTasks.get(req.body.file).resume();
                     res.send('Resumed');
                 }
-                else if (snapshot.state === firebase.storage.TaskState.RUNNING) {
+                else if (snapshot.state === 'running') {
                     uploadTasks.get(req.body.file).pause();
                     res.send('Paused');
                 }
@@ -115,7 +135,6 @@ router.post('/uploads', async (req, res) => {
 router.get('/uploads', async (req, res) => {
     try {
         const data = [];
-        printUploadTasksMap('/api/uploads');
         for (const task of uploadTasks) {
             const task2 = task[1] || {};
             const { bytesTransferred, totalBytes, state } = task2.snapshot || {};
@@ -134,7 +153,7 @@ router.get('/uploads', async (req, res) => {
     }
 });
 
-// router.get('/uploads/events', (req, res) => sendUploadEvents(req, res));
+router.get('/uploads/events', (req, res) => sendUploadEvents(req, res));
 
 async function listFilesInRoot() {
     try {
@@ -169,106 +188,86 @@ async function deleteItem(path) {
 
 async function uploadItem(fileName, file) {
     const uploadTask = storageRef.child(fileName).put(file);
-    // uploadEventsStream.emit('start', {
-    //     bytesTransferred: `${(uploadTask.snapshot.bytesTransferred / (1024 * 1024)).toFixed(2)} MB`,
-    //     totalBytes: `${(uploadTask.snapshot.totalBytes / (1024 * 1024)).toFixed(2)} MB`,
-    //     progress: ((uploadTask.snapshot.bytesTransferred / uploadTask.snapshot.totalBytes) * 100).toFixed(2),
-    //     file: fileName,
-    //     state: uploadTask.snapshot.state
-    // });
-    printUploadTasksMap('uploadItem1');
+    uploadEventsStream.emit('start', {
+        bytesTransferred: `${(uploadTask.snapshot.bytesTransferred / (1024 * 1024)).toFixed(2)} MB`,
+        totalBytes: `${(uploadTask.snapshot.totalBytes / (1024 * 1024)).toFixed(2)} MB`,
+        progress: ((uploadTask.snapshot.bytesTransferred / uploadTask.snapshot.totalBytes) * 100).toFixed(2),
+        file: fileName,
+        state: uploadTask.snapshot.state
+    });
     uploadTasks.set(fileName, uploadTask);
-    printUploadTasksMap('uploadItem2');
-    uploadTask.on(firebase.storage.TaskEvent.STATE_CHANGED, (snapshot) => {
-        // uploadEventsStream.emit('progress', {
-        //     bytesTransferred: `${(uploadTask.snapshot.bytesTransferred / (1024 * 1024)).toFixed(2)} MB`,
-        //     totalBytes: `${(uploadTask.snapshot.totalBytes / (1024 * 1024)).toFixed(2)} MB`,
-        //     progress: ((uploadTask.snapshot.bytesTransferred / uploadTask.snapshot.totalBytes) * 100).toFixed(2),
-        //     file: fileName,
-        //     state: uploadTask.snapshot.state
-        // });
+    uploadTask.on('state_changed', (snapshot) => {
+        uploadEventsStream.emit('progress', {
+            bytesTransferred: `${(uploadTask.snapshot.bytesTransferred / (1024 * 1024)).toFixed(2)} MB`,
+            totalBytes: `${(uploadTask.snapshot.totalBytes / (1024 * 1024)).toFixed(2)} MB`,
+            progress: ((uploadTask.snapshot.bytesTransferred / uploadTask.snapshot.totalBytes) * 100).toFixed(2),
+            file: fileName,
+            state: uploadTask.snapshot.state
+        });
         const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-        console.log('Upload is ' + progress + '% done');
-        switch (snapshot.state) {
-            case firebase.storage.TaskState.PAUSED:
-                console.log('Upload is paused');
-                break;
-            case firebase.storage.TaskState.RUNNING:
-                console.log('Upload is running');
-                break;
-        }
+        console.log('Upload is ' + progress + '% done', ' ;status is', snapshot.state);
     }, (error) => {
         console.log(error.code);
-        // uploadEventsStream.emit('error', {
-        //     bytesTransferred: `${(uploadTask.snapshot.bytesTransferred / (1024 * 1024)).toFixed(2)} MB`,
-        //     totalBytes: `${(uploadTask.snapshot.totalBytes / (1024 * 1024)).toFixed(2)} MB`,
-        //     progress: ((uploadTask.snapshot.bytesTransferred / uploadTask.snapshot.totalBytes) * 100).toFixed(2),
-        //     file: fileName,
-        //     state: uploadTask.snapshot.state
-        // });
-        printUploadTasksMap('uploadItem4');
+        uploadEventsStream.emit('error', {
+            bytesTransferred: `${(uploadTask.snapshot.bytesTransferred / (1024 * 1024)).toFixed(2)} MB`,
+            totalBytes: `${(uploadTask.snapshot.totalBytes / (1024 * 1024)).toFixed(2)} MB`,
+            progress: ((uploadTask.snapshot.bytesTransferred / uploadTask.snapshot.totalBytes) * 100).toFixed(2),
+            file: fileName,
+            state: uploadTask.snapshot.state
+        });
     }, () => {
-        // uploadEventsStream.emit('complete', {
-        //     bytesTransferred: `${(uploadTask.snapshot.bytesTransferred / (1024 * 1024)).toFixed(2)} MB`,
-        //     totalBytes: `${(uploadTask.snapshot.totalBytes / (1024 * 1024)).toFixed(2)} MB`,
-        //     progress: ((uploadTask.snapshot.bytesTransferred / uploadTask.snapshot.totalBytes) * 100).toFixed(2),
-        //     file: fileName,
-        //     state: uploadTask.snapshot.state
-        // });
-        printUploadTasksMap('uploadItem5');
+        uploadEventsStream.emit('complete', {
+            bytesTransferred: `${(uploadTask.snapshot.bytesTransferred / (1024 * 1024)).toFixed(2)} MB`,
+            totalBytes: `${(uploadTask.snapshot.totalBytes / (1024 * 1024)).toFixed(2)} MB`,
+            progress: ((uploadTask.snapshot.bytesTransferred / uploadTask.snapshot.totalBytes) * 100).toFixed(2),
+            file: fileName,
+            state: uploadTask.snapshot.state
+        });
         uploadTasks.delete(fileName);
     });
 }
 
-// function sendUploadEvents(req, res) {
+function sendUploadEvents(req, res) {
 
-//     res.writeHead(200, {
-//         'Content-Type': 'text/event-stream',
-//         'Cache-Control': 'no-cache',
-//         Connection: 'keep-alive'
-//     });
+    res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive'
+    });
 
-//     setTimeout(() => {
-//         res.write(`data: ${JSON.stringify({
-//             status: 'OK'
-//         })}\n\n`);
-//         res.flush();
-//     }, 25000);
+    setTimeout(() => {
+        res.write(`data: ${JSON.stringify({
+            status: 'OK'
+        })}\n\n`);
+        res.flush();
+    }, 25000);
 
-//     setInterval(() => {
-//         res.write(`data: ${JSON.stringify({
-//             status: 'OK'
-//         })}\n\n`);
-//         res.flush();
-//     }, 50000);
+    setInterval(() => {
+        res.write(`data: ${JSON.stringify({
+            status: 'OK'
+        })}\n\n`);
+        res.flush();
+    }, 50000);
 
-//     uploadEventsStream.on('start', function (data) {
-//         res.write(`data: ${JSON.stringify(data)}\n\n`);
-//         res.flush();
-//     });
+    uploadEventsStream.on('start', function (data) {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+        res.flush();
+    });
 
-//     uploadEventsStream.on('progress', function (data) {
-//         res.write(`data: ${JSON.stringify(data)}\n\n`);
-//         res.flush();
-//     });
+    uploadEventsStream.on('progress', function (data) {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+        res.flush();
+    });
 
-//     uploadEventsStream.on('error', function (data) {
-//         res.write(`data: ${JSON.stringify(data)}\n\n`);
-//         res.flush();
-//     });
+    uploadEventsStream.on('error', function (data) {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+        res.flush();
+    });
 
-//     uploadEventsStream.on('complete', function (data) {
-//         res.write(`data: ${JSON.stringify(data)}\n\n`);
-//         res.flush();
-//     });
-// }
-
-function printUploadTasksMap(name = '') {
-    console.log(`start - printUploadTasksMap - ${name}`);
-    for (const task of uploadTasks) {
-        console.log(task[0], 'is present in Map!!');
-    }
-    console.log(`end - printUploadTasksMap - ${name}`);
+    uploadEventsStream.on('complete', function (data) {
+        res.write(`data: ${JSON.stringify(data)}\n\n`);
+        res.flush();
+    });
 }
 
 module.exports = router;
